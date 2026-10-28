@@ -222,7 +222,7 @@ footer code{font-family:'IBM Plex Mono',monospace;background:var(--line2);paddin
 <div class="feed" id="feed"></div>
 
 <footer>
-  <strong>Sources &amp; honesty:</strong> rates curve, Brent, gold, equities, VIX, credit = FRED (St. Louis Fed, ~1d lag) · FX = Frankfurter (ECB) · SOFR/EFFR = NY Fed · CFTC = CFTC public reporting · MAS &amp; foreign 2Y = link-outs · news = Google News.
+  <strong>Sources &amp; honesty:</strong> rates curve, Brent, gold, credit = FRED (St. Louis Fed, ~1d lag) · Brent, gold, DXY, FX, equities, VIX = Yahoo Finance (may be ~15 min delayed) · FX fallback = Frankfurter (ECB) · SOFR/EFFR = NY Fed · CFTC = CFTC public reporting · MAS &amp; foreign 2Y = link-outs · news = Google News.
   Some feeds are end-of-day or weekly, not intraday — this is a <em>scan tool</em>, not an execution screen. Verify anything before you'd pitch it.<br>
   News and CORS-blocked data are fetched through a small Netlify function (<code>netlify/functions/proxy</code>) so they stay reliable. Opened locally without the function, it falls back to a public proxy.
 </footer>
@@ -261,11 +261,11 @@ const dirClass = v => v>0?"up":v<0?"down":"flat";
 const SCAN = [
   {id:"effr",  lab:"Fed funds (EFFR)", src:"https://www.federalreserve.gov/monetarypolicy/openmarket.htm"},
   {id:"2s10s", lab:"US 2s10s",         src:"https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
-  {id:"dxy",   lab:"Dollar (proxy)",    src:"https://www.marketwatch.com/investing/index/dxy"},
-  {id:"brent", lab:"Brent crude",      src:"https://www.marketwatch.com/investing/future/cb00"},
-  {id:"gold",  lab:"Gold (XAU)",        src:"https://www.marketwatch.com/investing/metal/gold"},
-  {id:"usdsgd",lab:"USD/SGD",          src:"https://www.marketwatch.com/investing/currency/usdsgd"},
-  {id:"usdjpy",lab:"USD/JPY",          src:"https://www.marketwatch.com/investing/currency/usdjpy"},
+  {id:"dxy",   lab:"Dollar (DXY)",      src:"https://www.tradingview.com/symbols/TVC-DXY/"},
+  {id:"brent", lab:"Brent crude",      src:"https://www.tradingview.com/symbols/ICEEUR-BRN1!/"},
+  {id:"gold",  lab:"Gold (XAU)",        src:"https://www.tradingview.com/symbols/XAUUSD/"},
+  {id:"usdsgd",lab:"USD/SGD",          src:"https://www.tradingview.com/symbols/USDSGD/"},
+  {id:"usdjpy",lab:"USD/JPY",          src:"https://www.tradingview.com/symbols/USDJPY/"},
   {id:"sofr",  lab:"SOFR",             src:"https://www.newyorkfed.org/markets/reference-rates/sofr"},
 ];
 function buildScan(){
@@ -325,6 +325,16 @@ async function loadNYFed(){
 /* --- Frankfurter FX (ECB daily) --- */
 async function loadFX(){
   try{
+    const pairs=[["USD/JPY","JPY=X",2,"BoJ vs US — watch the 2Y diff"],["USD/SGD","SGD=X",4,"MAS S$NEER-managed float"],
+                 ["EUR/USD","EURUSD=X",4,"single biggest DXY weight"],["GBP/USD","GBPUSD=X",4,""],["AUD/USD","AUDUSD=X",4,"risk / China proxy"]];
+    const qs=await Promise.all(pairs.map(p=>yahoo(p[1])));
+    setTile("usdjpy", fmt(qs[0].close,2), `${chgTxt(qs[0])} · ${qs[0].date}`, dirClass(qs[0].chg));
+    setTile("usdsgd", fmt(qs[1].close,4), `${chgTxt(qs[1])} · ${qs[1].date}`, dirClass(qs[1].chg));
+    document.getElementById("fx-body").innerHTML = pairs.map((p,i)=>row(p[0], fmt(qs[i].close,p[2]), p[3])).join("") +
+      `<div class="foot-note" style="margin-top:8px">US 2Y: <strong class="mono">${US2Y!=null?US2Y.toFixed(2)+"%":"loading…"}</strong> — the anchor for every rate differential above.</div>`;
+    return;
+  }catch(e){ /* fall back to ECB reference rates below */ }
+  try{
     const j=await getJSON("https://api.frankfurter.app/latest?from=USD&to=JPY,SGD,EUR,GBP,AUD");
     const r=j.rates, date=j.date;
     // tiles
@@ -347,6 +357,7 @@ async function loadFX(){
 /* --- FRED series helper: returns latest + previous valid points --- */
 async function fredSeries(id){
   const txt=await getText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`, {proxyFirst:true});
+  if(!/^\s*(DATE|observation_date)/i.test(txt)) throw new Error("FRED returned non-CSV for "+id);
   const lines=txt.trim().split("\n"); const vals=[];
   for(let i=1;i<lines.length;i++){ const p=lines[i].split(","); const v=parseFloat(p[1]);
     if(p[1] && p[1]!=="." && !isNaN(v)) vals.push({date:p[0], val:v}); }
@@ -356,23 +367,42 @@ async function fredSeries(id){
   const pct = (prev && prev.val)? (chg/prev.val*100) : null;
   return {close:last.val, prev:prev?prev.val:null, chg, pct, date:last.date};
 }
+/* --- Yahoo Finance chart feed (via Netlify proxy): live-ish market prices --- */
+async function yahoo(sym){
+  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=15m`;
+  const j=await getJSON(url,{proxyFirst:true});
+  const m=j&&j.chart&&j.chart.result&&j.chart.result[0]&&j.chart.result[0].meta;
+  if(!m||!isFinite(m.regularMarketPrice)) throw new Error("no Yahoo quote: "+sym);
+  const close=m.regularMarketPrice, prev=isFinite(m.chartPreviousClose)?m.chartPreviousClose:(isFinite(m.previousClose)?m.previousClose:null);
+  const chg=prev!=null?close-prev:null, pct=prev?chg/prev*100:null;
+  const t=new Date((m.regularMarketTime||Date.now()/1000)*1000);
+  const date=t.toLocaleString("en-SG",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+  return {close,prev,chg,pct,date};
+}
+const chgTxt=(q,d=2)=> q.pct!=null?`${arrow(q.chg)} ${fmt(Math.abs(q.pct),2)}%`:"";
+
 async function loadCommodities(){
-  // Brent (FRED DCOILBRENTEU)
-  try{ const q=await fredSeries("DCOILBRENTEU"); const cls=dirClass(q.chg);
-    setTile("brent", `$${fmt(q.close,2)}`, q.pct!=null?`${arrow(q.chg)} ${fmt(q.pct,2)}% · ${q.date}`:`FRED · ${q.date}`, cls);
-    document.getElementById("cmdty-body").insertAdjacentHTML("beforeend",
-      row("Brent crude", `$${fmt(q.close,2)}`, `FRED · ${q.date}`));
-  }catch(e){ failTile("brent","Brent"); }
-  // Gold (FRED LBMA PM fix)
-  try{ const q=await fredSeries("GOLDPMGBD228NLBM"); const cls=dirClass(q.chg);
-    setTile("gold", `$${fmt(q.close,2)}`, q.pct!=null?`${arrow(q.chg)} ${fmt(q.pct,2)}% · ${q.date}`:`FRED · ${q.date}`, cls);
-    document.getElementById("cmdty-body").insertAdjacentHTML("beforeend",
-      row("Gold (LBMA PM)", `$${fmt(q.close,2)}`, `FRED · ${q.date}`));
-  }catch(e){ failTile("gold","gold"); }
-  // Dollar — broad trade-weighted index (FRED DTWEXBGS) as a real proxy
-  try{ const q=await fredSeries("DTWEXBGS"); const cls=dirClass(q.chg);
-    setTile("dxy", fmt(q.close,2), `broad USD · FRED ${q.date}`, cls);
-  }catch(e){ setTile("dxy", `<span class="dim">see ↗</span>`, "tap source", ""); }
+  // Brent (ICE front-month) and gold (COMEX front-month) from Yahoo; FRED as fallback
+  for(const [id,sym,name,fredId,label] of [
+    ["brent","BZ=F","Brent crude","DCOILBRENTEU","Brent"],
+    ["gold","GC=F","Gold","",""]
+  ]){
+    try{ const q=await yahoo(sym);
+      setTile(id, `$${fmt(q.close,2)}`, `${chgTxt(q)} · ${q.date}`, dirClass(q.chg));
+      document.getElementById("cmdty-body").insertAdjacentHTML("beforeend", row(name, `$${fmt(q.close,2)}`, `futures · ${q.date}`));
+    }catch(e){
+      try{ if(!fredId) throw e; const q=await fredSeries(fredId);
+        setTile(id, `$${fmt(q.close,2)}`, `FRED spot · ${q.date}`, dirClass(q.chg));
+      }catch(e2){ failTile(id, name); }
+    }
+  }
+  // Dollar index (ICE DXY); broad trade-weighted index only as a labelled fallback
+  try{ const q=await yahoo("DX-Y.NYB");
+    setTile("dxy", fmt(q.close,2), `${chgTxt(q)} · ${q.date}`, dirClass(q.chg));
+  }catch(e){
+    try{ const q=await fredSeries("DTWEXBGS"); setTile("dxy", fmt(q.close,2), `broad USD (not DXY) · ${q.date}`, dirClass(q.chg)); }
+    catch(e2){ setTile("dxy", `<span class="dim">see ↗</span>`, "tap source", ""); }
+  }
 }
 
 /* --- CFTC Commitments of Traders (Socrata) --- */
@@ -539,8 +569,8 @@ async function fredLatest(id){
 }
 async function loadCrossAsset(){
   const body=document.getElementById("xasset-body"); let html="";
-  for(const [id,name] of [["SP500","S&P 500"],["NASDAQCOM","Nasdaq Composite"],["VIXCLS","VIX · equity vol"]]){
-    try{ const q=await fredSeries(id); const cls=dirClass(q.chg);
+  for(const [id,name,sym] of [["SP500","S&P 500","^GSPC"],["NASDAQCOM","Nasdaq Composite","^IXIC"],["VIXCLS","VIX · equity vol","^VIX"]]){
+    try{ const q=await yahoo(sym).catch(()=>fredSeries(id)); const cls=dirClass(q.chg);
       html+=`<div class="row"><div class="k">${name}</div><div class="v ${cls}">${fmt(q.close,2)}${q.pct!=null?`<small>${q.pct>0?"+":""}${fmt(q.pct,2)}%</small>`:""}</div></div>`;
     }catch(e){ html+=row(name, `<span class="dim">see ↗</span>`, "feed blocked"); }
   }

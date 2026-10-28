@@ -3,7 +3,9 @@
 // headers, so the dashboard can read sources that block browsers directly.
 
 const ALLOW = [
-  "stooq.com",                       // Brent, gold, dollar proxy, equities, VIX, foreign 2Y
+  "stooq.com",
+  "query1.finance.yahoo.com",        // Brent, gold, DXY, FX, equities, VIX
+  "query2.finance.yahoo.com",
   "eservices.mas.gov.sg",            // MAS SORA / SGS
   "secure.mas.gov.sg",
   "fred.stlouisfed.org",             // HY credit spread
@@ -34,7 +36,10 @@ exports.handler = async (event) => {
   if (!ok) return { statusCode: 403, headers: CORS, body: "domain not allowed: " + host };
 
   try {
-    const r = await fetch(target, { headers: { "User-Agent": "Mozilla/5.0 (macro-desk)" } });
+    const ua = host.endsWith("yahoo.com")
+      ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+      : "Mozilla/5.0 (macro-desk)";
+    const r = await fetch(target, { headers: { "User-Agent": ua, "Accept": "application/json,text/plain,*/*" } });
     const body = await r.text();
     return {
       statusCode: r.status,
