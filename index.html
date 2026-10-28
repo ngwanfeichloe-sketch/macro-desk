@@ -148,8 +148,8 @@ footer code{font-family:'IBM Plex Mono',monospace;background:var(--line2);paddin
 </div>
 <div class="cal" id="cal"></div>
 <div class="foot-note" style="margin:8px 2px 0">
-  Key scheduled events, seeded &amp; verified — a fully live calendar isn't free to a browser.
-  Confirm exact times and see the full week on
+  <span id="cal-src">Loading calendar…</span>
+  Full calendar on
   <a class="linkout" href="https://www.forexfactory.com/calendar" target="_blank" rel="noopener">Forex Factory ↗</a>
   &nbsp;·&nbsp;<a class="linkout" href="https://www.bls.gov/schedule/news_release/2026_sched.htm" target="_blank" rel="noopener">BLS schedule ↗</a>
 </div>
@@ -222,7 +222,7 @@ footer code{font-family:'IBM Plex Mono',monospace;background:var(--line2);paddin
 <div class="feed" id="feed"></div>
 
 <footer>
-  <strong>Sources &amp; honesty:</strong> rates curve, Brent, gold, credit = FRED (St. Louis Fed, ~1d lag) · Brent, gold, DXY, FX, equities, VIX = Yahoo Finance (may be ~15 min delayed) · FX fallback = Frankfurter (ECB) · SOFR/EFFR = NY Fed · CFTC = CFTC public reporting · MAS &amp; foreign 2Y = link-outs · news = Google News.
+  <strong>Sources &amp; honesty:</strong> rates curve, Brent, gold, credit = FRED (St. Louis Fed, ~1d lag) · Brent, gold, DXY, FX, equities, VIX = Yahoo Finance (may be ~15 min delayed) · FX fallback = Frankfurter (ECB) · SOFR/EFFR = NY Fed · CFTC = CFTC public reporting · MAS &amp; foreign 2Y = link-outs · calendar = Forex Factory feed + official schedules · news = Google News.
   Some feeds are end-of-day or weekly, not intraday — this is a <em>scan tool</em>, not an execution screen. Verify anything before you'd pitch it.<br>
   News and CORS-blocked data are fetched through a small Netlify function (<code>netlify/functions/proxy</code>) so they stay reliable. Opened locally without the function, it falls back to a public proxy.
 </footer>
@@ -515,46 +515,86 @@ function timeAgo(d){ const t=new Date(d).getTime(); if(isNaN(t)) return ""; cons
   if(m<60) return Math.round(m)+"m"; if(m<1440) return Math.round(m/60)+"h"; return Math.round(m/1440)+"d"; }
 
 /* ============================================================
-   WEEK AHEAD — curated key events + live countdown
-   (verified dates; edit EVENTS to extend)
+   WEEK AHEAD — live high-impact events (Forex Factory feed, refreshes itself)
+   + verified central-bank / CPI dates for the weeks the feed doesn't cover yet.
+   Seeded dates checked against Fed, ECB, BoE, BLS, MAS sites (Oct 2026).
    ============================================================ */
 const EVENTS = [
-  {d:"2026-06-16", r:"JP", t:"BoJ decision", m:"policy rate · USD/JPY driver", hi:true},
-  {d:"2026-06-17", r:"US", t:"FOMC decision", m:"Warsh's debut · SEP + dot plot · 2pm ET", hi:true},
-  {d:"2026-06-18", r:"UK", t:"BoE Bank Rate", m:"MPC summary + minutes", hi:true},
-  {d:"2026-06-23", r:"SG", t:"Singapore CPI", m:"~23rd · date approx · USD/SGD", mid:true},
-  {d:"2026-07-14", r:"US", t:"US CPI (June)", m:"8:30am ET · last 4.2% y/y, hot", hi:true},
-  {d:"2026-07-23", r:"EU", t:"ECB decision", m:"rate decision + Lagarde presser", hi:true},
-  {d:"2026-07-28", r:"SG", t:"MAS policy (MPS)", m:"quarterly · date TBC, confirm on MAS", mid:true},
-  {d:"2026-07-29", r:"US", t:"FOMC decision", m:"2pm ET · no projections", hi:true},
-  {d:"2026-07-30", r:"UK", t:"BoE + MPR", m:"Bank Rate + Monetary Policy Report", hi:true},
-  {d:"2026-07-31", r:"JP", t:"BoJ + Outlook", m:"decision + Outlook Report", hi:true},
-  {d:"2026-08-12", r:"US", t:"US CPI (July)", m:"~8:30am ET · date approx", hi:true},
-  {d:"2026-09-10", r:"EU", t:"ECB decision", m:"rate decision + presser", hi:true},
-  {d:"2026-09-16", r:"US", t:"FOMC decision", m:"SEP + dot plot", hi:true},
-  {d:"2026-09-17", r:"UK", t:"BoE Bank Rate", m:"MPC summary + minutes", hi:true},
-  {d:"2026-09-18", r:"JP", t:"BoJ decision", m:"policy rate", hi:true},
+  {d:"2026-10-28", r:"US", t:"FOMC decision", m:"2pm ET · statement + Warsh presser", hi:true},
+  {d:"2026-10-29", r:"EU", t:"ECB decision", m:"rate decision + presser", hi:true},
+  {d:"2026-10-30", r:"JP", t:"BoJ + Outlook", m:"decision ~noon JST + Outlook Report", hi:true},
+  {d:"2026-11-05", r:"UK", t:"BoE + MPR", m:"Bank Rate + Monetary Policy Report", hi:true},
+  {d:"2026-11-10", r:"US", t:"US CPI (Oct)", m:"8:30am ET", hi:true},
+  {d:"2026-12-09", r:"US", t:"FOMC decision", m:"2pm ET · SEP + dot plot", hi:true},
+  {d:"2026-12-10", r:"US", t:"US CPI (Nov)", m:"8:30am ET", hi:true},
+  {d:"2026-12-17", r:"EU", t:"ECB decision", m:"rate decision + staff projections", hi:true},
+  {d:"2026-12-17", r:"UK", t:"BoE Bank Rate", m:"MPC summary + minutes", hi:true},
+  {d:"2026-12-18", r:"JP", t:"BoJ decision", m:"policy rate · confirm on boj.or.jp", hi:true},
+  {d:"2027-01-13", r:"US", t:"US CPI (Dec)", m:"8:30am ET", hi:true},
+  {d:"2027-01-27", r:"US", t:"FOMC decision", m:"2pm ET", hi:true},
+  {d:"2027-01-29", r:"SG", t:"MAS policy (MPS)", m:"no later than this date", mid:true},
+  {d:"2027-02-04", r:"EU", t:"ECB decision", m:"rate decision + presser", hi:true},
+  {d:"2027-02-11", r:"US", t:"US CPI (Jan)", m:"8:30am ET", hi:true},
+  {d:"2027-03-10", r:"US", t:"US CPI (Feb)", m:"8:30am ET", hi:true},
+  {d:"2027-03-17", r:"US", t:"FOMC decision", m:"2pm ET · SEP + dot plot", hi:true},
+  {d:"2027-03-18", r:"EU", t:"ECB decision", m:"rate decision + staff projections", hi:true},
+  {d:"2027-04-13", r:"US", t:"US CPI (Mar)", m:"8:30am ET", hi:true},
+  {d:"2027-04-28", r:"US", t:"FOMC decision", m:"2pm ET", hi:true},
+  {d:"2027-04-29", r:"EU", t:"ECB decision", m:"rate decision + presser", hi:true},
 ];
+const CCY_REGION={USD:"US",EUR:"EU",JPY:"JP",GBP:"UK",CNY:"CN",AUD:"AU"};
 function stripTime(d){ return new Date(d.getFullYear(),d.getMonth(),d.getDate()); }
 function iso(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
-function daysTo(s){ return Math.round((stripTime(new Date(s+"T00:00:00")) - stripTime(new Date()))/864e5); }
-function firstFridays(n){ // upcoming NFP = first Friday of each month
+function daysTo(dt){ return Math.round((stripTime(dt) - stripTime(new Date()))/864e5); }
+function firstFridays(n){ // estimated NFP = first Friday of each month (live feed overrides when it covers the week)
   const out=[], now=new Date();
   for(let i=0;i<=n;i++){ const dt=new Date(now.getFullYear(),now.getMonth()+i,1);
     while(dt.getDay()!==5) dt.setDate(dt.getDate()+1);
-    if(stripTime(dt)>=stripTime(now)) out.push({d:iso(dt), r:"US", t:"US jobs (NFP)", m:"8:30am ET · payrolls + unemployment", mid:true}); }
+    out.push({d:iso(dt), r:"US", t:"US jobs (NFP)", m:"8:30am ET · date est.", mid:true}); }
   return out;
 }
-function loadCalendar(){
-  const all=[...EVENTS, ...firstFridays(3)].map(e=>({...e,dd:daysTo(e.d)}))
-    .filter(e=>e.dd>=0).sort((a,b)=>a.dd-b.dd).slice(0,9);
-  document.getElementById("cal").innerHTML = all.map(e=>{
-    const when=new Date(e.d+"T00:00:00").toLocaleDateString("en-SG",{weekday:"short",day:"2-digit",month:"short"});
-    const cd=e.dd===0?"today":e.dd===1?"tomorrow":`in ${e.dd}d`;
+async function ffWeek(which){
+  let j;
+  try{ j=await getJSON(`https://nfs.faireconomy.media/ff_calendar_${which}.json`,{proxyFirst:true}); }
+  catch(e){ j=await getJSON(`https://cdn-nfs.faireconomy.media/ff_calendar_${which}.json`,{proxyFirst:true}); }
+  if(!Array.isArray(j)) throw new Error("bad calendar feed");
+  return j;
+}
+async function loadCalendar(){
+  const box=document.getElementById("cal");
+  let live=[], coveredTo=null;
+  try{
+    const weeks=await Promise.allSettled([ffWeek("thisweek"), ffWeek("nextweek")]);
+    const raw=weeks.filter(w=>w.status==="fulfilled").flatMap(w=>w.value);
+    if(!raw.length) throw new Error("calendar feed empty");
+    for(const e of raw){ const t=new Date(e.date); if(!coveredTo||t>coveredTo) coveredTo=t; }
+    live=raw.filter(e=>e.impact==="High" && CCY_REGION[e.country]).map(e=>{
+      const t=new Date(e.date);
+      const bits=[]; if(e.forecast) bits.push("fcst "+e.forecast); if(e.previous) bits.push("prev "+e.previous);
+      const timed=!/T00:00(:00)?/.test(e.date);
+      return {dt:t, r:CCY_REGION[e.country], t:e.title, hi:true, live:true,
+        m:(timed? t.toLocaleTimeString("en-SG",{hour:"2-digit",minute:"2-digit"})+" your time":"all day")+(bits.length?" · "+bits.join(" · "):"")};
+    });
+  }catch(e){ live=[]; coveredTo=null; }
+  const cover=coveredTo?stripTime(coveredTo):null;
+  const seeded=[...EVENTS, ...firstFridays(3)]
+    .map(e=>({...e, dt:new Date(e.d+"T00:00:00")}))
+    .filter(e=>!cover || stripTime(e.dt)>cover);           // live feed supersedes seeded dates it covers
+  const now=new Date();
+  const all=[...live, ...seeded]
+    .filter(e=> e.live ? e.dt>=new Date(now-2*3600e3) : daysTo(e.dt)>=0)
+    .sort((a,b)=>a.dt-b.dt).slice(0,12);
+  box.innerHTML = all.map(e=>{
+    const dd=daysTo(e.dt);
+    const when=e.dt.toLocaleDateString("en-SG",{weekday:"short",day:"2-digit",month:"short"});
+    let cd=dd===0?"today":dd===1?"tomorrow":`in ${dd}d`;
+    if(e.live){ const h=(e.dt-now)/3600e3; if(h<0) cd="just out"; else if(h<24) cd=`in ${Math.max(1,Math.round(h))}h`; }
     return `<div class="evt ${e.hi?"hi":e.mid?"mid":""}">
       <div class="when"><span>${when}</span><span class="cd">${cd}</span></div>
       <div class="ttl"><span class="rg">${e.r}</span> ${e.t}</div><div class="meta">${e.m}</div></div>`;
-  }).join("") || `<div class="feed-msg">No seeded events ahead — check Forex Factory.</div>`;
+  }).join("") || `<div class="feed-msg">No events found — check Forex Factory.</div>`;
+  const note=document.getElementById("cal-src");
+  if(note) note.textContent = live.length||cover ? "Live high-impact events from the Forex Factory feed for this week and next; later dates are official central-bank and BLS schedules." : "Live calendar feed unavailable — showing official central-bank and BLS schedules.";
 }
 
 /* ============================================================

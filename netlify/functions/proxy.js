@@ -13,7 +13,9 @@ const ALLOW = [
   "markets.newyorkfed.org",          // SOFR / EFFR
   "api.frankfurter.app",             // FX
   "publicreporting.cftc.gov",        // CFTC positioning
-  "news.google.com"                  // headlines (RSS)
+  "news.google.com",                 // headlines (RSS)
+  "nfs.faireconomy.media",           // economic calendar (Forex Factory feed)
+  "cdn-nfs.faireconomy.media"
 ];
 
 const CORS = {
@@ -46,7 +48,7 @@ exports.handler = async (event) => {
       headers: {
         ...CORS,
         "Content-Type": r.headers.get("content-type") || "text/plain",
-        "Cache-Control": "public, max-age=300"   // cache 5 min, eases load
+        "Cache-Control": host.endsWith("faireconomy.media") ? "public, max-age=1800" : "public, max-age=300"   // calendar feed is rate-limited
       },
       body
     };
