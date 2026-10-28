@@ -246,8 +246,10 @@ async function getText(url, {proxyFirst=false}={}){
   const attempts = proxyFirst ? [viaFn, viaPub] : [url, viaFn, viaPub];
   let lastErr;
   for(const u of attempts){
-    try{ const r = await fetch(u,{cache:"no-store"}); if(r.ok) return await r.text(); lastErr=new Error(r.status); }
+    const ctl=new AbortController(), timer=setTimeout(()=>ctl.abort(), 8000);   // a slow source can't stall the page
+    try{ const r = await fetch(u,{cache:"no-store", signal:ctl.signal}); if(r.ok) return await r.text(); lastErr=new Error(r.status); }
     catch(e){ lastErr=e; }
+    finally{ clearTimeout(timer); }
   }
   throw lastErr || new Error("fetch failed");
 }
@@ -564,7 +566,7 @@ async function loadCalendar(){
   const box=document.getElementById("cal");
   let live=[], coveredTo=null;
   try{
-    const weeks=await Promise.allSettled([ffWeek("thisweek"), ffWeek("nextweek")]);
+    const weeks=await Promise.allSettled([ffWeek("thisweek")]);   // feed only publishes the current week
     const raw=weeks.filter(w=>w.status==="fulfilled").flatMap(w=>w.value);
     if(!raw.length) throw new Error("calendar feed empty");
     for(const e of raw){ const t=new Date(e.date); if(!coveredTo||t>coveredTo) coveredTo=t; }
@@ -594,7 +596,7 @@ async function loadCalendar(){
       <div class="ttl"><span class="rg">${e.r}</span> ${e.t}</div><div class="meta">${e.m}</div></div>`;
   }).join("") || `<div class="feed-msg">No events found — check Forex Factory.</div>`;
   const note=document.getElementById("cal-src");
-  if(note) note.textContent = live.length||cover ? "Live high-impact events from the Forex Factory feed for this week and next; later dates are official central-bank and BLS schedules." : "Live calendar feed unavailable — showing official central-bank and BLS schedules.";
+  if(note) note.textContent = live.length||cover ? "Live high-impact events from the Forex Factory feed for this week; later dates are official central-bank and BLS schedules." : "Live calendar feed unavailable — showing official central-bank and BLS schedules.";
 }
 
 /* ============================================================
